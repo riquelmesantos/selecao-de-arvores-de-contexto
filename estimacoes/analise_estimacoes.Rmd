@@ -1,0 +1,1233 @@
+---
+title: "Analise"
+author: "Riquelme Santos"
+date: "`r Sys.Date()`"
+output: html_document
+
+---
+```{r}
+wd <- "C:/Users/rique/Desktop/PIPGES/Dissertacao/Códigos/Comparacao_Estimadores"
+library(dplyr, quietly = T)
+library(tidyverse, quietly = T)
+```
+
+# Algoritmo Contexto
+## Importa árvores e função para calcular a árvore usando outros limiares
+```{r warning=FALSE}
+setwd(wd)
+source("funcoes_auxiliares.R")
+tau_1_contexto <- readRDS("estimacoes/result_contexto_tau_1.RDS")
+tau_2_contexto <- readRDS("estimacoes/result_contexto_tau_2.RDS")
+tau_3_contexto <- readRDS("estimacoes/result_contexto_tau_3.RDS")
+tau_4_contexto <- readRDS("estimacoes/result_contexto_tau_4.RDS")
+```
+
+
+```{r warning=FALSE}
+tau_c_deltas <- function(deltas, limiar, internos, folhas_internos) {
+  deltas <-  deltas[!is.na(deltas)]
+  nos <- names(deltas)
+  externos <- setdiff(nos, c(internos, folhas_internos))
+  if(all(deltas[externos] < limiar) && all(deltas[folhas_internos] > limiar)) {
+    return(1)
+  } 
+  else return(0)
+}
+```
+
+## Árvore 1
+### Proporção de acertos (Árvore 1)
+```{r warning=FALSE}
+tau_1 <- c('00', '10', '01', '11')
+acertos_1_contexto <- matrix(0, nrow = 100, ncol = length(tau_1_contexto), dimnames = list(1:100, names(tau_1_contexto)))
+for (i in 1:length(tau_1_contexto)) {
+  for (j in 1:100) {
+    acertos_1_contexto[j, i] <- as.integer(setequal(tau_1_contexto[[i]][[j]]$hat_tau, tau_1))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo Contexto na árvore 1:')
+colSums(acertos_1_contexto) / 100
+```
+
+### Análise das árvores estimadas (Árvore 1)
+```{r}
+taus_1 <- setNames(vector("list", length(tau_1_contexto)), names(tau_1_contexto))
+for (i in 1:ncol(acertos_1_contexto)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_1_contexto[[i]][[j]]$hat_tau),collapse = '-')
+    taus_1[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_1_contexto)){
+  print(table(taus_1[[i]]))
+}
+```
+
+### Análise para outras constantes  (Árvore 1)
+```{r}
+constantes <- 0:30/10
+acertos_1_contantes <- matrix(0, nrow = length(constantes), ncol = length(tau_1_contexto), dimnames = list('c=' %s+% constantes, names(tau_1_contexto)))
+internos_1 <- c('0', '1')
+folhas_internos_1 <- c('0', '1')
+
+for(constante in constantes){
+  acertos_1_reteste <- matrix(0, nrow = 100, ncol = length(tau_1_contexto), dimnames = list(1:100, names(tau_1_contexto)))
+  for(tamanho in names(tau_1_contexto)){
+    for(i in 1:100){
+      n <- as.numeric(stri_sub(tamanho, from=3))
+      limiar <- constante * log(n)
+      deltas <- tau_1_contexto[[tamanho]][[i]]$deltas
+      acertos_1_reteste[i, tamanho] <- tau_c_deltas(deltas, limiar , internos_1, folhas_internos_1)
+    }
+  }
+  acertos_1_contantes['c='%s+%constante,] <- colSums(acertos_1_reteste)
+}
+acertos_1_contantes
+```
+
+
+```{r fig.height=7, fig.width=8}
+minhas_cores <- colorRampPalette(c("#265F01", "#509F20", "#47BF89", "#00B84D", "#00B2B5", "#0E7ACC", "#4F71CC", "#8B64CC"))(8)
+
+df_const_1_contexto <- rownames_to_column(as.data.frame(acertos_1_contantes), var = "c")
+df_long <- pivot_longer(df_const_1_contexto, cols = -c, names_to = "n", values_to = 'n_acertos')
+df_long$n <- factor(df_long$n, levels = unique(df_long$n))
+df_long$c <- as.numeric(gsub("c=", "", df_long$c))
+
+grafico1c <- ggplot(df_long, aes(x = c, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor da constante",
+    breaks = seq(0, 4, by = 0.5)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico1c)
+ # setwd(wd)
+ # ggsave("graficos/Proporcao_acertos_contexto_tau_1.pdf", 
+ #        plot = grafico1c, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 1)
+```{r fig.height=7, fig.width=8}
+tempo_contexto <- sapply(tau_1_contexto, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_contexto)
+
+# Gráfico com ggplot2
+df_tempo_contexto <- data.frame(
+  Amostra = rep(1:100, times = length(tau_1_contexto)),
+  Tempo = as.vector(tempo_contexto),
+  Tamanho = factor(rep(names(tau_1_contexto), each = 100), levels = names(tau_1_contexto))
+)
+
+
+grafico2c <- ggplot(df_tempo_contexto, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico2c)
+# setwd(wd)
+# ggsave("graficos/Tempo_execucao_contexto_tau_1.pdf", 
+#        plot = grafico2c, width = 7, height = 8, dpi = 300)
+```
+
+
+## Árvore 2
+### Proporção de acertos (Árvore 2)
+```{r}
+tau_2 <- c('1', '10', '100', '1000', '0000')
+acertos_2_contexto <- matrix(0, nrow = 100, ncol = length(tau_2_contexto), dimnames = list(1:100, names(tau_2_contexto)))
+for (i in 1:ncol(acertos_2_contexto)) {
+  for (j in 1:100) {
+    acertos_2_contexto[j, i] <- as.integer(setequal(tau_2_contexto[[i]][[j]]$hat_tau, tau_2))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo Contexto na árvore 2:')
+colSums(acertos_2_contexto) / 100
+```
+
+### Análise das árvores estimadas (Árvore 2)
+```{r}
+taus_2 <- setNames(vector("list", length(tau_2_contexto)), names(tau_2_contexto))
+for (i in 1:ncol(acertos_2_contexto)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_2_contexto[[i]][[j]]$hat_tau),collapse = '-')
+    taus_2[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_2_contexto)){
+  print(sort(table(taus_2[[i]]),decreasing = T)[1:3])
+}
+```
+
+### Análise para outras constantes (Árvore 2)
+```{r}
+constantes <- 0:30/10
+acertos_2_contantes <- matrix(0, nrow = length(constantes), ncol = length(tau_2_contexto), dimnames = list('c=' %s+% constantes, names(tau_2_contexto)))
+
+internos_2 <- c('0', '00', '000')
+folhas_internos_2 <- c('0', '00', '000')
+for(constante in constantes){
+  acertos_2_reteste <- matrix(0, nrow = 100, ncol = length(tau_2_contexto), dimnames = list(1:100, names(tau_2_contexto)))
+  alfabeto <- c('0', '1')
+  for(tamanho in names(tau_2_contexto)){
+    for(i in 1:100){
+      n <- as.numeric(stri_sub(tamanho, from=3))
+      limiar <- constante * log(n)
+      deltas <- tau_2_contexto[[tamanho]][[i]]$deltas
+      acertos_2_reteste[i, tamanho] <- tau_c_deltas(deltas, limiar , internos_2, folhas_internos_2)
+    }
+  }
+  acertos_2_contantes['c='%s+%constante,] <- colSums(acertos_2_reteste)
+}
+acertos_2_contantes
+```
+
+```{r fig.height=7, fig.width=8}
+minhas_cores <- colorRampPalette(c("#265F01", "#509F20", "#47BF89", "#00B84D", "#00B2B5", "#0E7ACC", "#4F71CC", "#8B64CC"))(8)
+
+df_const_2_contexto <- rownames_to_column(as.data.frame(acertos_2_contantes), var = "c")
+df_long_2 <- pivot_longer(df_const_2_contexto, cols = -c, names_to = "n", values_to = 'n_acertos')
+df_long_2$n <- factor(df_long_2$n, levels = unique(df_long_2$n))
+df_long_2$c <- as.numeric(gsub("c=", "", df_long$c))
+
+grafico3c <- ggplot(df_long_2, aes(x = c, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor da constante",
+    breaks = seq(0, 4, by = 0.5)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  )+
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico3c)
+setwd(wd)
+ggsave("graficos/Proporcao_acertos_contexto_tau_2.pdf",
+      plot = grafico3c, width = 7, height = 8, dpi = 300)
+```
+
+
+### Tempo de execução do algoritmo (Árvore 2)
+```{r}
+tempo_contexto2 <- sapply(tau_2_contexto, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_contexto2)
+
+# Gráfico com ggplot2
+df_tempo_contexto_2 <- data.frame(
+  Amostra = rep(1:100, times = length(tau_2_contexto)),
+  Tempo = as.vector(tempo_contexto2),
+  Tamanho = factor(rep(names(tau_2_contexto), each = 100), levels = names(tau_2_contexto))
+)
+
+
+grafico4c <- ggplot(df_tempo_contexto_2, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico4c)
+setwd(wd)
+ggsave("graficos/Tempo_execucao_contexto_tau_2.pdf", 
+       plot = grafico4c, width = 7, height = 8, dpi = 300)
+```
+
+## Árvore 3
+### Proporção de acertos (Árvore 3)
+```{r}
+tau_3 <- c('2', '00', '10', '20', '11', '21', '001', '101', '201')
+acertos_3_contexto <- matrix(0, nrow = 100, ncol = length(tau_3_contexto), dimnames = list(1:100, names(tau_3_contexto)))
+for (i in 1:ncol(acertos_3_contexto)) {
+  for (j in 1:100) {
+    acertos_3_contexto[j, i] <- as.integer(setequal(tau_3_contexto[[i]][[j]]$hat_tau, tau_3))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo Contexto na árvore 3:')
+colSums(acertos_3_contexto) / 100
+```
+
+### Análise das árvores estimadas (Árvore 3)
+```{r}
+taus_3 <- setNames(vector("list", length(tau_3_contexto)), names(tau_3_contexto))
+for (i in 1:ncol(acertos_3_contexto)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_3_contexto[[i]][[j]]$hat_tau),collapse = '-')
+    taus_3[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_3_contexto)){
+  print(sort(table(taus_3[[i]]),decreasing = T)[1:3])
+}
+```
+
+### Análise para outras constantes (Árvore 3)
+```{r}
+constantes <- 0:30/10
+acertos_3_contantes <- matrix(0, nrow = length(constantes), ncol = length(tau_3_contexto), dimnames = list('c=' %s+% constantes, names(tau_3_contexto)))
+
+internos_3 <- c('0', '01', '1')
+folhas_internos_3 <- c('0', '01', '1')
+for(constante in constantes){
+  acertos_3_reteste <- matrix(0, nrow = 100, ncol = length(tau_3_contexto), dimnames = list(1:100, names(tau_3_contexto)))
+  for(tamanho in names(tau_3_contexto)){
+    for(i in 1:100){
+      n <- as.numeric(stri_sub(tamanho, from=3))
+      limiar <- constante * log(n)
+      deltas <- tau_3_contexto[[tamanho]][[i]]$deltas
+      acertos_3_reteste[i, tamanho] <- tau_c_deltas(deltas, limiar , internos_3, folhas_internos_3)
+    }
+  }
+  acertos_3_contantes['c='%s+%constante,] <- colSums(acertos_3_reteste)
+}
+acertos_3_contantes
+```
+
+```{r fig.height=7, fig.width=8}
+minhas_cores <- colorRampPalette(c("#265F01", "#509F20", "#47BF89", "#00B84D", "#00B2B5", "#0E7ACC", "#4F71CC", "#8B64CC"))(8)
+
+df_const_3_contexto <- rownames_to_column(as.data.frame(acertos_3_contantes), var = "c")
+df_long_3 <- pivot_longer(df_const_3_contexto, cols = -c, names_to = "n", values_to = 'n_acertos')
+df_long_3$n <- factor(df_long_3$n, levels = unique(df_long_3$n))
+df_long_3$c <- as.numeric(gsub("c=", "", df_long_3$c))
+
+grafico5c <- ggplot(df_long_3, aes(x = c, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor da constante",
+    breaks = seq(0, 4, by = 0.5)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  )+
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico5c)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_contexto_tau_3.pdf",
+#       plot = grafico5c, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 3)
+```{r}
+tempo_contexto_3 <- sapply(tau_3_contexto, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_contexto_3)
+
+# Gráfico com ggplot2
+df_tempo_contexto_3 <- data.frame(
+  Amostra = rep(1:100, times = length(tau_3_contexto)),
+  Tempo = as.vector(tempo_contexto_3),
+  Tamanho = factor(rep(names(tau_3_contexto), each = 100), levels = names(tau_3_contexto))
+)
+
+
+grafico6c <- ggplot(df_tempo_contexto_3, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico6c)
+setwd(wd)
+ggsave("graficos/Tempo_execucao_contexto_tau_3.pdf",
+       plot = grafico6c, width = 7, height = 8, dpi = 300)
+```
+
+
+## Árvore 4
+### Proporção de acertos (Árvore 4)
+```{r}
+tau_4 <- c('0', '1', '02', '12', '22', '03', '13', '33', '032', '232', '332', '023', '123', '223', '323', '0132', '1132', '2132', '3132')
+acertos_4_contexto <- matrix(0, nrow = 100, ncol = length(tau_4_contexto), dimnames = list(1:100, names(tau_4_contexto)))
+for (i in 1:(ncol(acertos_4_contexto)-1)) {
+  for (j in 1:100) {
+    acertos_4_contexto[j, i] <- as.integer(setequal(tau_4_contexto[[i]][[j]]$hat_tau, tau_4))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo Contexto na árvore 4:')
+colSums(acertos_4_contexto) / 100
+```
+
+### Análise das árvores estimadas (Árvore 4)
+```{r}
+taus_4 <- setNames(vector("list", length(tau_4_contexto)), names(tau_4_contexto))
+for (i in 1:ncol(acertos_4_contexto)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_4_contexto[[i]][[j]]$hat_tau),collapse = '-')
+    taus_4[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_4_contexto)){
+  print(sort(table(taus_4[[i]]),decreasing = T)[1:3])
+}
+```
+
+### Análise para outras constantes (Árvore 4)
+```{r}
+constantes <- 0:30/10
+acertos_4_contantes <- matrix(0, nrow = length(constantes), ncol = length(tau_4_contexto), dimnames = list('c=' %s+% constantes, names(tau_4_contexto)))
+
+internos_4 <- c('2', '3', '32', '23', '132')
+folhas_internos_4 <- c('2', '3', '32', '23', '132')
+for(constante in constantes){
+  acertos_4_reteste <- matrix(0, nrow = 100, ncol = length(tau_4_contexto), dimnames = list(1:100, names(tau_4_contexto)))
+  for(tamanho in names(tau_4_contexto)){
+    for(i in 1:100){
+      n <- as.numeric(stri_sub(tamanho, from=3))
+      limiar <- constante * log(n)
+      deltas <- tau_4_contexto[[tamanho]][[i]]$deltas
+      acertos_4_reteste[i, tamanho] <- tau_c_deltas(deltas, limiar , internos_4, folhas_internos_4)
+    }
+  }
+  acertos_4_contantes['c='%s+%constante,] <- colSums(acertos_4_reteste)
+}
+acertos_4_contantes
+```
+
+```{r fig.height=7, fig.width=8}
+
+df_const_4_contexto <- rownames_to_column(as.data.frame(acertos_4_contantes), var = "c")
+df_long_4 <- pivot_longer(df_const_4_contexto, cols = -c, names_to = "n", values_to = 'n_acertos')
+df_long_4$n <- factor(df_long_4$n, levels = unique(df_long_4$n))
+df_long_4$c <- as.numeric(gsub("c=", "", df_long_4$c))
+
+grafico7c <- ggplot(df_long_4, aes(x = c, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor da constante",
+    breaks = seq(0, 4, by = 0.5)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  )+
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico7c)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_contexto_tau_4.pdf",
+#       plot = grafico7c, width = 7, height = 8, dpi = 300)
+```
+
+
+### Tempo de execução do algoritmo (Árvore 4)
+```{r}
+tempo_contexto_4 <- sapply(tau_4_contexto, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_contexto_4)
+
+# Gráfico com ggplot2
+df_tempo_contexto_4 <- data.frame(
+  Amostra = rep(1:100, times = length(tau_4_contexto)),
+  Tempo = as.vector(tempo_contexto_4),
+  Tamanho = factor(rep(names(tau_4_contexto), each = 100), levels = names(tau_4_contexto))
+)
+
+grafico8c <- ggplot(df_tempo_contexto_4, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico8c)
+# setwd(wd)
+# ggsave("graficos/Tempo_execucao_contexto_tau_4.pdf",
+#        plot = grafico8c, width = 7, height = 8, dpi = 300)
+```
+
+
+# Algoritmo Galves
+## Importa árvores e função para calcular a árvore usando outros limiares
+```{r warning=FALSE}
+setwd(wd)
+tau_1_galves <- readRDS("estimacoes/result_galves_tau_1.RDS")
+tau_2_galves <- readRDS("estimacoes/result_galves_tau_2.RDS")
+tau_3_galves <- readRDS("estimacoes/result_galves_tau_3.RDS")
+tau_4_galves <- readRDS("estimacoes/result_galves_tau_4.RDS")
+```
+
+```{r warning=FALSE}
+tau_g_deltas <- function(deltas, limiar, alfabeto, folhas_internos, tau) {
+  deltas <-  deltas[!is.na(deltas)]
+  nos <- names(deltas)
+  internos <- c(unique(sapply(tau, function(w) pai(w))), tau)
+  externos <- setdiff(nos, c(internos, folhas_internos, tau))
+  
+  seleciona <- sapply(folhas_internos, function(w) any(deltas[filhos(w, alfabeto)] > limiar))
+  nao_seleciona <- sapply(externos, function(w) all(deltas[w] <= limiar))
+  if(all(seleciona) && all(nao_seleciona[!is.na(nao_seleciona)])) return(1)
+  return(0)
+}
+```
+
+## Árvore 1
+### Proporção de acertos (Árvore 1)
+```{r warning=FALSE}
+tau_1 <- c('00', '10', '01', '11')
+acertos_1_galves <- matrix(0, nrow = 100, ncol = length(tau_1_galves), dimnames = list(1:100, names(tau_1_galves)))
+for (i in 1:length(tau_1_galves)) {
+  for (j in 1:100) {
+    acertos_1_galves[j, i] <- as.integer(setequal(tau_1_galves[[i]][[j]]$hat_tau, tau_1))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo galves na árvore 1:')
+colSums(acertos_1_galves) / 100
+```
+
+### Análise das árvores estimadas (Árvore 1)
+```{r}
+taus_1_galves <- setNames(vector("list", length(tau_1_galves)), names(tau_1_galves))
+for (i in 1:ncol(acertos_1_galves)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_1_galves[[i]][[j]]$hat_tau),collapse = '-')
+    taus_1[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_1_galves)){
+  print(sort(table(taus_1[[i]]),decreasing = T)[1:3])
+}
+```
+
+### Análise para outras constantes  (Árvore 1)
+```{r}
+limiares <- 1:20/20
+acertos_1_limiares <- matrix(0, nrow = length(limiares), ncol = length(tau_1_galves), dimnames = list('limiar=' %s+% limiares, names(tau_1_galves)))
+folhas_internos_1 <- c('0', '1')
+
+for(limiar in limiares){
+  acertos_1_reteste <- matrix(0, nrow = 100, ncol = length(tau_1_galves), dimnames = list(1:100, names(tau_1_galves)))
+  for(tamanho in names(tau_1_galves)){
+    for(i in 1:100){
+      deltas <- tau_1_galves[[tamanho]][[i]]$deltas
+      acertos_1_reteste[i, tamanho] <- tau_g_deltas(deltas, limiar, alfabeto, folhas_internos_1, tau_1)
+    }
+  }
+  acertos_1_limiares['limiar='%s+%limiar,] <- colSums(acertos_1_reteste)
+}
+
+print(acertos_1_limiares)
+```
+
+```{r fig.height=7, fig.width=8}
+df_const_1_galves <- rownames_to_column(as.data.frame(acertos_1_limiares), var = "limiares")
+df_long_1_galves <- pivot_longer(df_const_1_galves, cols = -limiares, names_to = "n", values_to = 'n_acertos')
+df_long_1_galves$n <- factor(df_long_1_galves$n, levels = unique(df_long_1_galves$n))
+df_long_1_galves$limiares <- as.numeric(gsub("limiar=", "", df_long_1_galves$limiares))
+
+grafico1g <- ggplot(df_long_1_galves, aes(x = limiares, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor do limiar",
+    breaks = seq(0, 1, by = 0.1)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  )+
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico1g)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_contexto_tau_1.pdf",
+#       plot = grafico7c, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 1)
+```{r}
+tempo_galves_1 <- sapply(tau_1_galves, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_galves_1)
+tempo_galves_1[tempo_galves_1>0.2] <- 0.030
+
+# Gráfico com ggplot2
+df_tempo_galves_1 <- data.frame(
+  Amostra = rep(1:100, times = length(tau_1_galves)),
+  Tempo = as.vector(tempo_galves_1),
+  Tamanho = factor(rep(names(tau_1_galves), each = 100), levels = names(tau_1_galves))
+)
+
+grafico2g <- ggplot(df_tempo_galves_1, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico2g)
+setwd(wd)
+ggsave("graficos/Tempo_execucao_galves_tau_1.pdf",
+       plot = grafico2g, width = 7, height = 8, dpi = 300)
+```
+
+## Árvore 2
+### Proporção de acertos (Árvore 2)
+```{r}
+tau_2 <- c('1', '10', '100', '1000', '0000')
+acertos_2_galves <- matrix(0, nrow = 100, ncol = length(tau_2_galves), dimnames = list(1:100, names(tau_2_galves)))
+for (i in 1:ncol(acertos_2_galves)) {
+  for (j in 1:100) {
+    acertos_2_galves[j, i] <- as.integer(setequal(tau_2_galves[[i]][[j]]$hat_tau, tau_2))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo galves na árvore 2:')
+colSums(acertos_2_galves) / 100
+```
+
+### Análise para outras constantes  (Árvore 2)
+```{r}
+limiares <- 1:20/20
+acertos_2_limiares <- matrix(0, nrow = length(limiares), ncol = length(tau_2_galves), dimnames = list('limiar=' %s+% limiares, names(tau_2_galves)))
+folhas_internos_2 <- c('0', '00', '000')
+
+for(limiar in limiares){
+  acertos_2_reteste <- matrix(0, nrow = 100, ncol = length(tau_2_galves), dimnames = list(1:100, names(tau_2_galves)))
+  for(tamanho in names(tau_2_galves)){
+    for(i in 1:100){
+      deltas <- tau_2_galves[[tamanho]][[i]]$deltas
+      acertos_2_reteste[i, tamanho] <- tau_g_deltas(deltas, limiar, alfabeto, folhas_internos_2, tau_2)
+    }
+  }
+  acertos_2_limiares['limiar='%s+%limiar,] <- colSums(acertos_2_reteste)
+  cat(colSums(acertos_2_reteste), '\n')
+}
+
+print(acertos_2_limiares)
+```
+
+```{r fig.height=7, fig.width=8}
+df_const_2_galves <- rownames_to_column(as.data.frame(acertos_2_limiares), var = "limiares")
+df_long_2_galves <- pivot_longer(df_const_2_galves, cols = -limiares, names_to = "n", values_to = 'n_acertos')
+df_long_2_galves$n <- factor(df_long_2_galves$n, levels = unique(df_long_2_galves$n))
+df_long_2_galves$limiares <- as.numeric(gsub("limiar=", "", df_long_2_galves$limiares))
+
+grafico1g <- ggplot(df_long_2_galves, aes(x = limiares, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor do limiar",
+    breaks = seq(0, 1, by = 0.1)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  )+
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico1g)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_contexto_tau_2.pdf",
+#       plot = grafico7c, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 2)
+```{r}
+tempo_galves_2 <- sapply(tau_2_galves, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_galves_2)
+
+# Gráfico com ggplot2
+df_tempo_galves_2 <- data.frame(
+  Amostra = rep(1:100, times = length(tau_2_galves)),
+  Tempo = as.vector(tempo_galves_2),
+  Tamanho = factor(rep(names(tau_2_galves), each = 100), levels = names(tau_2_galves))
+)
+
+grafico4g <- ggplot(df_tempo_galves_2, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico4g)
+setwd(wd)
+ggsave("graficos/Tempo_execucao_galves_tau_2.pdf",
+       plot = grafico4g, width = 7, height = 8, dpi = 300)
+```
+
+
+## Árvore 3
+### Proporção de acertos (Árvore 3)
+```{r}
+tau_3 <- c('2', '00', '10', '20', '11', '21', '001', '101', '201')
+acertos_3_galves <- matrix(0, nrow = 100, ncol = length(tau_3_galves), dimnames = list(1:100, names(tau_3_galves)))
+for (i in 1:ncol(acertos_3_galves)) {
+  for (j in 1:100) {
+    acertos_3_galves[j, i] <- as.integer(setequal(tau_3_galves[[i]][[j]]$hat_tau, tau_3))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo galves na árvore 3:')
+colSums(acertos_3_galves) / 100
+```
+
+### Análise para outras constantes  (Árvore 3)
+```{r}
+limiares <- 1:20/20
+acertos_3_limiares <- matrix(0, nrow = length(limiares), ncol = length(tau_3_galves), dimnames = list('limiar=' %s+% limiares, names(tau_3_galves)))
+folhas_internos_3 <- c('0', '01', '1')
+alfabeto <- c('0', '1', '2')
+for(limiar in limiares){
+  acertos_3_reteste <- matrix(0, nrow = 100, ncol = length(tau_3_galves), dimnames = list(1:100, names(tau_3_galves)))
+  for(tamanho in names(tau_3_galves)){
+    for(i in 1:100){
+      deltas <- tau_3_galves[[tamanho]][[i]]$deltas
+      acertos_3_reteste[i, tamanho] <- tau_g_deltas(deltas, limiar, alfabeto, folhas_internos_3, tau_3)
+    }
+  }
+  acertos_3_limiares['limiar='%s+%limiar,] <- colSums(acertos_3_reteste)
+  cat(colSums(acertos_3_reteste), '\n')
+}
+
+print(acertos_3_limiares)
+```
+
+```{r fig.height=7, fig.width=8}
+df_const_3_galves <- rownames_to_column(as.data.frame(acertos_3_limiares), var = "limiares")
+df_long_3_galves <- pivot_longer(df_const_3_galves, cols = -limiares, names_to = "n", values_to = 'n_acertos')
+df_long_3_galves$n <- factor(df_long_3_galves$n, levels = unique(df_long_3_galves$n))
+df_long_3_galves$limiares <- as.numeric(gsub("limiar=", "", df_long_3_galves$limiares))
+
+grafico1g <- ggplot(df_long_3_galves, aes(x = limiares, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor do limiar",
+    breaks = seq(0, 1, by = 0.1)  # ajusta esse intervalo conforme quiser
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  )+
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  # muda tudo pra 14pt
+
+print(grafico1g)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_contexto_tau_3.pdf",
+#       plot = grafico7c, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 3)
+```{r}
+tempo_galves_3 <- sapply(tau_3_galves, function(x) sapply(x, function(y) y$tempo))
+colMeans(tempo_galves_3)
+
+# Gráfico com ggplot2
+df_tempo_galves_3 <- data.frame(
+  Amostra = rep(1:100, times = length(tau_3_galves)),
+  Tempo = as.vector(tempo_galves_3),
+  Tamanho = factor(rep(names(tau_3_galves), each = 100), levels = names(tau_3_galves))
+)
+
+grafico6g <- ggplot(df_tempo_galves_3, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico6g)
+setwd(wd)
+ggsave("graficos/Tempo_execucao_galves_tau_3.pdf",
+       plot = grafico6g, width = 7, height = 8, dpi = 300)
+```
+
+
+
+## Árvore 4
+### Proporção de acertos (Árvore 4)
+```{r}
+tau_4 <- c('0', '1', '02', '12', '22', '03', '13', '33', '032', '232', '332', '023', '123', '223', '323', '0132', '1132', '2132', '3132')
+acertos_4_galves <- matrix(0, nrow = 100, ncol = length(tau_4_galves), dimnames = list(1:100, names(tau_4_galves)))
+for (i in 1:(ncol(acertos_4_galves)-1)) {
+  for (j in 1:100) {
+    acertos_4_galves[j, i] <- as.integer(setequal(tau_4_galves[[i]][[j]]$hat_tau, tau_4))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo galves na árvore 4:')
+colSums(acertos_4_galves) / 100
+```
+
+
+
+
+# Algoritmo BIC
+## Importa árvores e função para calcular a árvore usando outros limiares
+```{r warning=FALSE}
+setwd(wd)
+tau_1_bic <- readRDS("estimacoes/result_bic_tau_1.RDS")
+tau_2_bic <- readRDS("estimacoes/result_bic_tau_2.RDS")
+tau_3_bic <- readRDS("estimacoes/result_bic_tau_3.RDS")
+tau_4_bic <- readRDS("estimacoes/result_bic_tau_4.RDS")
+```
+
+```{r warning=FALSE}
+pen <- function(amostra, alfabeto, c = 1){
+  a <- length(alfabeto)
+  n <- nchar(amostra)
+  return(c*(a-1)*log(n))}
+
+calculate_Vw <- function(w, alfabeto, penalizacao, P_ws){
+  exp(-penalizacao) * P_ws[w]
+}
+
+tau_bic_Pws <- function(log_P_ws, alfabeto, c = 1){
+  arvore <- c()
+  nos <- names(log_P_ws)
+  folhas <- Filter(\(w) any(!filhos(w, alfabeto) %in% nos), nos)
+  internos <- setdiff(nos, folhas)
+  
+  log_Vw <- setNames(rep(-Inf, length(nos)), nos)
+  Xw <- setNames(rep(0, length(nos)), nos)
+  
+  penalizacao <- pen(amostra, alfabeto, c)
+  
+  log_Vw <- setNames(rep(-Inf, length(nos)), internos) 
+  log_Vw[folhas] <- sapply(folhas, function(w) log_P_ws[w] - penalizacao)
+  
+  for(w in rev(internos)){
+    filhos_w <- intersect(filhos(w, alfabeto), nos)
+    log_Vw_w <-  log_P_ws[w]- penalizacao
+    log_Vw[w] <- log_Vw_w
+    soma_logs_filhos <- sum(log_Vw[filhos_w])
+    if(soma_logs_filhos > log_Vw_w){
+      log_Vw[w] <- soma_logs_filhos
+      Xw[w] <- 1
+    }
+  }
+  
+  for(w in rev(nos)){
+    nw <- nchar(w)
+    pais <- setdiff(sufixos(w), w)
+    if((nw == 1 && Xw[w] == 0) || (Xw[w] == 0 && all(Xw[pais] == 1)))
+      arvore <- c(arvore, w)
+    }
+  return(arvore)
+}
+```
+
+## Árvore 1
+### Proporção de acertos (Árvore 1)
+```{r warning=FALSE}
+tau_1 <- c('00', '10', '01', '11')
+acertos_1_bic <- matrix(0, nrow = 100, ncol = length(tau_1_bic), dimnames = list(1:100, names(tau_1_bic)))
+for (i in 1:length(tau_1_bic)) {
+  for (j in 1:100) {
+    acertos_1_bic[j, i] <- as.integer(setequal(tau_1_bic[[i]][[j]]$hat_tau, tau_1))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo bic na árvore 1:')
+colSums(acertos_1_bic) / 100
+```
+
+### Análise das árvores estimadas (Árvore 1)
+```{r}
+taus_1_bic <- setNames(vector("list", length(tau_1_bic)), names(tau_1_bic))
+for (i in 1:ncol(acertos_1_bic)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_1_bic[[i]][[j]]$hat_tau),collapse = '-')
+    taus_1_bic[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_1_bic)){
+  print(sort(table(taus_1_bic[[i]]),decreasing = T)[1:3])
+}
+```
+
+
+### Análise para outras constantes  (Árvore 1)
+```{r}
+constantes <- 1:30/10
+acertos_1_contantes <- matrix(0, nrow = length(constantes), ncol = length(tau_1_bic), dimnames = list('c=' %s+% constantes, names(tau_1_bic)))
+alfabeto <- c('0', '1')
+
+for(constante in constantes){
+  acertos_1_reteste <- matrix(0, nrow = 100, ncol = length(tau_1_bic), dimnames = list(1:100, names(tau_1_bic)))
+  for(tamanho in names(tau_1_bic)){
+    for(i in 1:100){
+      log_P_ws <- tau_1_bic[[tamanho]][[i]]$log_P_ws
+      tau_novo <- tau_bic_Pws(log_P_ws, alfabeto, constante)
+      acertos_1_reteste[i, tamanho] <- setequal(tau_novo, tau_1)
+    }
+  }
+  acertos_1_contantes['c='%s+%constante,] <- colSums(acertos_1_reteste)
+  print('c='%s+%constante)
+  print(acertos_1_contantes['c='%s+%constante,])
+}
+acertos_1_contantes
+```
+
+```{r fig.height=7, fig.width=8}
+minhas_cores <- colorRampPalette(c("#265F01", "#509F20", "#47BF89", "#00B84D", "#00B2B5", "#0E7ACC", "#4F71CC", "#8B64CC"))(8)
+
+df_const_1_bic <- rownames_to_column(as.data.frame(acertos_1_contantes), var = "c")
+df_long_tau_1 <- pivot_longer(df_const_1_bic, cols = -c, names_to = "n", values_to = 'n_acertos')
+df_long_tau_1$n <- factor(df_long_tau_1$n, levels = unique(df_long_tau_1$n))
+df_long_tau_1$c <- as.numeric(gsub("c=", "", df_long_tau_1$c))
+
+grafico1b <- ggplot(df_long_tau_1, aes(x = c, y = n_acertos, color = n, group = n)) +
+  geom_line(linewidth = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor da constante",
+    breaks = seq(0, 4, by = 0.5) 
+  ) +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  
+
+print(grafico1b)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_bic_tau_1.pdf",
+#         plot = grafico1b, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 1)
+```{r fig.height=7, fig.width=8}
+tempo_bic <- sapply(tau_1_bic, function(x) sapply(x, function(y) y$tempo))
+tempo_bic[tempo_bic>0.75] <- mean(tempo_bic)
+colMeans(tempo_bic)
+
+# Gráfico com ggplot2
+df_tempo_bic <- data.frame(
+  Amostra = rep(1:100, times = length(tau_1_bic)),
+  Tempo = as.vector(tempo_bic),
+  Tamanho = factor(rep(names(tau_1_bic), each = 100), levels = names(tau_1_bic))
+)
+
+grafico2b <- ggplot(df_tempo_bic, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico2b)
+# setwd(wd)
+# ggsave("graficos/Tempo_execucao_bic_tau_1.pdf", 
+#        plot = grafico2c, width = 7, height = 8, dpi = 300)
+```
+
+
+## Árvore 2
+### Proporção de acertos (Árvore 2)
+```{r}
+tau_2 <- c('1', '10', '100', '1000', '0000')
+acertos_2_bic <- matrix(0, nrow = 100, ncol = length(tau_2_bic), dimnames = list(1:100, names(tau_2_bic)))
+for (i in 1:ncol(acertos_2_bic)) {
+  for (j in 1:100) {
+    acertos_2_bic[j, i] <- as.integer(setequal(tau_2_bic[[i]][[j]]$hat_tau, tau_2))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo bic na árvore 2:')
+colSums(acertos_2_bic) / 100
+```
+
+### Análise das árvores estimadas (Árvore 2)
+```{r}
+taus_2_bic <- setNames(vector("list", length(tau_2_bic)), names(tau_2_bic))
+for (i in 1:ncol(acertos_2_bic)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_2_bic[[i]][[j]]$hat_tau),collapse = '-')
+    taus_2_bic[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_2_bic)){
+  print(sort(table(taus_2_bic[[i]]),decreasing = T)[1:3])
+}
+```
+
+### Análise para outras constantes  (Árvore 2)
+```{r}
+constantes <- 1:30/30
+acertos_2_contantes <- matrix(0, nrow = length(constantes), ncol = length(tau_2_bic), dimnames = list('c=' %s+% constantes, names(tau_2_bic)))
+alfabeto <- c('0','1')
+for(constante in constantes){
+  acertos_2_reteste <- matrix(0, nrow = 100, ncol = length(tau_2_bic), dimnames = list(1:100, names(tau_2_bic)))
+  for(tamanho in names(tau_2_bic)[8]){
+    for(i in 1:100){
+      log_P_ws <- tau_2_bic[[tamanho]][[i]]$log_P_ws
+      tau_novo <- tau_bic_Pws(log_P_ws, alfabeto, constante)
+      acertos_2_reteste[i, tamanho] <- setequal(tau_novo, tau_2)
+      cat(constante, tamanho, i, acertos_2_reteste[i, tamanho], '\n')
+      print(tau_novo)
+    }
+  }
+  acertos_2_contantes['c='%s+%constante,] <- colSums(acertos_2_reteste)
+  print('c='%s+%constante)
+  print(acertos_2_contantes['c='%s+%constante,])
+}
+acertos_2_contantes
+```
+
+```{r fig.height=7, fig.width=8}
+minhas_cores <- colorRampPalette(c("#265F01", "#509F20", "#47BF89", "#00B84D", "#00B2B5", "#0E7ACC", "#4F71CC", "#8B64CC"))(8)
+
+df_const_2_bic <- rownames_to_column(as.data.frame(acertos_2_contantes), var = "c")
+df_long_tau_2 <- pivot_longer(df_const_2_bic, cols = -c, names_to = "n", values_to = 'n_acertos')
+df_long$n <- factor(df_long$n, levels = unique(df_long_tau_2$n))
+df_long$c <- as.numeric(gsub("c=", "", df_long_tau_2$c))
+
+grafico3b <- ggplot(df_long, aes(x = c, y = n_acertos, color = n, group = n)) +
+  geom_line(size = 1.2, alpha = 0.6) +
+  scale_x_continuous(
+    name = "Valor da constante",
+    breaks = seq(0, 4, by = 0.5) 
+  ) +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  ) +
+  labs(
+    y = "Número de acertos"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(size = 18),
+        aspect.ratio = 1)  
+
+print(grafico3b)
+# setwd(wd)
+# ggsave("graficos/Proporcao_acertos_bic_tau_2.pdf",
+#         plot = grafico1b, width = 7, height = 8, dpi = 300)
+```
+
+### Tempo de execução do algoritmo (Árvore 2)
+```{r fig.height=7, fig.width=8}
+tempo_bic <- sapply(tau_2_bic, function(x) sapply(x, function(y) y$tempo))
+tempo_bic[tempo_bic>10] <- mean(tempo_bic[,6])
+colMeans(tempo_bic)
+
+# Gráfico com ggplot2
+df_tempo_bic <- data.frame(
+  Amostra = rep(1:100, times = length(tau_2_bic)),
+  Tempo = as.vector(tempo_bic),
+  Tamanho = factor(rep(names(tau_2_bic), each = 100), levels = names(tau_2_bic))
+)
+
+grafico4b <- ggplot(df_tempo_bic, aes(x = Amostra, y = Tempo, color = Tamanho)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    name = element_blank(),
+    values = minhas_cores
+  )+
+  labs(x = "Número de amostras",
+       y = "Tempo (s)") +
+  theme_minimal() +
+   theme(legend.position = "bottom",
+        text = element_text(size = 18))
+
+print(grafico4b)
+# setwd(wd)
+# ggsave("graficos/Tempo_execucao_bic_tau_2.pdf", 
+#        plot = grafico2c, width = 7, height = 8, dpi = 300)
+```
+
+
+## Árvore 3
+### Proporção de acertos (Árvore 3)
+```{r}
+tau_3 <- c('2', '00', '10', '20', '11', '21', '001', '101', '201')
+acertos_3_bic <- matrix(0, nrow = 100, ncol = length(tau_3_bic), dimnames = list(1:100, names(tau_3_bic)))
+for (i in 1:ncol(acertos_3_bic)) {
+  for (j in 1:100) {
+    acertos_3_bic[j, i] <- as.integer(setequal(tau_3_bic[[i]][[j]]$hat_tau, tau_3))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo bic na árvore 3:')
+colSums(acertos_3_bic) / 100
+```
+
+### Análise das árvores estimadas (Árvore 2)
+```{r}
+taus_3_bic <- setNames(vector("list", length(tau_3_bic)), names(tau_3_bic))
+for (i in 1:ncol(acertos_3_bic)) {
+  for (j in 1:100) {
+    arvore <- paste0(sort(tau_3_bic[[i]][[j]]$hat_tau),collapse = '-')
+    taus_3_bic[[i]][j] <- arvore
+  }
+}
+
+for (i in 1:ncol(acertos_3_bic)){
+  print(sort(table(taus_3_bic[[i]]),decreasing = T)[1:3])
+}
+```
+
+## Árvore 4
+### Proporção de acertos (Árvore 4)
+```{r}
+tau_4 <- c('0', '1', '02', '12', '22', '03', '13', '33', '032', '232', '332', '023', '123', '223', '323', '0132', '1132', '2132', '3132')
+acertos_4_bic <- matrix(0, nrow = 100, ncol = length(tau_4_bic), dimnames = list(1:100, names(tau_4_bic)))
+for (i in 1:(ncol(acertos_4_bic)-1)) {
+  for (j in 1:100) {
+    acertos_4_bic[j, i] <- as.integer(setequal(tau_4_bic[[i]][[j]]$hat_tau, tau_4))
+  }
+}
+
+print('Proporção de acertos pelo algoritmo bic na árvore 4:')
+colSums(acertos_4_bic) / 100
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
