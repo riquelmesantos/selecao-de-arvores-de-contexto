@@ -54,8 +54,37 @@ tau_g <- function(amostra, alfabeto, limiar, tam_max) {
   
   # Retorna a árvore selecionada e as probabilidades suavizadas associadas
   return(list('hat_tau' = arvore, 
-              'probabilidades' = probs[c('lambda',arvore),],
-              'deltas' = deltas))
+              'probabilidades_arvore' = probs[c('lambda',arvore),],
+              'probabilidades' = probs,
+              'deltas' = deltas,
+              'nos' = nos))
+}
+
+tau_g_calculado <- function(deltas, nos, probs, alfabeto, limiar) {
+  nos_admissiveis <- names(deltas)
+  C <- setNames(rep(0, length(nos)), nos)
+  
+  for(w in rev(nos_admissiveis)){
+    if(C[w] == 1) next
+    filhos_w <- filhos(w, alfabeto)
+    irmaos_w <- intersect(irmaos(w, alfabeto), nos_admissiveis)
+    if(all(filhos_w %in% nos_admissiveis)){
+      if(all(C[filhos_w] == 1)) next
+      else if(any(deltas[irmaos_w] > limiar)){
+        C[w] <- 1
+        next
+      }
+    }
+    if(any(deltas[irmaos_w] > limiar)) C[w] <- 1
+  }
+  arvore <- names(C[C==1])
+  
+  # Retorna a árvore selecionada e as probabilidades suavizadas associadas
+  return(list('hat_tau' = arvore, 
+              'probabilidades_arvore' = probs[c('lambda',arvore),],
+              'probabilidades' = probs,
+              'deltas' = deltas,
+              'nos' = nos))
 }
 
 # # 
